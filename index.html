@@ -24,7 +24,7 @@ canvas#hudCanvas {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   pointer-events: none; display: block;
 }
-#startOverlay {
+#startScreen {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   touch-action: none; cursor: pointer; z-index: 10;
@@ -79,7 +79,7 @@ canvas#hudCanvas {
 <canvas id="gameCanvas"></canvas>
 <canvas id="hudCanvas"></canvas>
 
-<div id="startOverlay">
+<div id="startScreen">
   <!-- SVG Dot silhouette (Option B) -->
   <svg class="svg-dot-bob" width="64" height="90" viewBox="0 0 64 90" xmlns="http://www.w3.org/2000/svg">
     <defs>
@@ -628,7 +628,7 @@ function respawnDot() {
 }
 
 // ── Input ──────────────────────────────────────────────────────────────
-document.getElementById('startOverlay').addEventListener('pointerdown', e => {
+document.getElementById('startScreen').addEventListener('pointerdown', e => {
   if (gameState !== 'start') return;
   e.preventDefault();
   initAudio().catch(() => {});
@@ -663,7 +663,7 @@ document.addEventListener('pointercancel', () => { holdLeft = holdRight = false;
 // ── Screen Flow ────────────────────────────────────────────────────────
 function showInstructions() {
   gameState = 'instructions';
-  const so = document.getElementById('startOverlay');
+  const so = document.getElementById('startScreen');
   const io = document.getElementById('instructionsOverlay');
   so.style.transition = 'opacity 0.3s';
   so.style.opacity    = '0';
