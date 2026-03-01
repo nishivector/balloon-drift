@@ -719,24 +719,29 @@ function drawClouds(riseSpeed) {
 
 function drawTelephonePole(x, baseY, alpha, scaleX) {
   const sw = scaleX || 1;
+  const ch = gameCanvas.height;
   ctx.save();
   ctx.globalAlpha = alpha;
-  // Pole
   ctx.strokeStyle = '#6B4F3A';
-  ctx.lineWidth   = 8 * sw;
-  ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, baseY - 180 * sw); ctx.stroke();
-  // Crossarm
-  ctx.lineWidth = 5 * sw;
-  ctx.beginPath();
-  ctx.moveTo(x - 32*sw, baseY - 160*sw);
-  ctx.lineTo(x + 32*sw, baseY - 160*sw);
-  ctx.stroke();
-  // Wire
+  // Pole — always extends to screen bottom so it looks grounded (not a floating cross)
+  const poleTop = baseY - 180 * sw;
+  ctx.lineWidth = 8 * sw;
+  ctx.beginPath(); ctx.moveTo(x, poleTop); ctx.lineTo(x, ch + 20); ctx.stroke();
+  // Upper arm — angled braces (not a horizontal bar, so it doesn't look like a cross)
+  const armY = baseY - 160 * sw;
+  ctx.lineWidth = 4 * sw;
+  ctx.beginPath(); ctx.moveTo(x, armY + 10*sw); ctx.lineTo(x - 28*sw, armY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, armY + 10*sw); ctx.lineTo(x + 28*sw, armY); ctx.stroke();
+  // Lower arm — second set of braces (real utility poles have multiple)
+  const arm2Y = baseY - 110 * sw;
+  ctx.beginPath(); ctx.moveTo(x, arm2Y + 8*sw); ctx.lineTo(x - 20*sw, arm2Y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, arm2Y + 8*sw); ctx.lineTo(x + 20*sw, arm2Y); ctx.stroke();
+  // Wire sagging between upper brace tips
   ctx.strokeStyle = '#3A3530';
-  ctx.lineWidth   = 1.5;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(x - 32*sw, baseY - 158*sw);
-  ctx.quadraticCurveTo(x, baseY - 150*sw, x + 32*sw, baseY - 158*sw);
+  ctx.moveTo(x - 28*sw, armY);
+  ctx.quadraticCurveTo(x, armY + 12*sw, x + 28*sw, armY);
   ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.restore();
