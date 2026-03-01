@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Balloon Drift</title>
+<script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #87AECF; overflow: hidden; width: 100vw; height: 100vh; }
+canvas#gameCanvas {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  display: block; touch-action: none;
+}
+canvas#hudCanvas {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  pointer-events: none; display: block;
+}
+#startOverlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  touch-action: none; cursor: pointer; z-index: 10;
+}
+#instructionsOverlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  touch-action: none; cursor: pointer; z-index: 10;
+  background: rgba(55, 100, 140, 0.88);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+#instructionsOverlay.active { opacity: 1; pointer-events: all; }
+.tap-fly {
+  font-family: 'Nunito', 'Quicksand', system-ui, sans-serif;
+  font-size: clamp(16px, 3vw, 22px);
+  color: rgba(255,255,255,0.82);
+  letter-spacing: 0.12em;
+  margin-top: 28px;
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { opacity: 0.80; }
+  50% { opacity: 1.0; }
+}
+@keyframes dotBobAnim {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+.svg-dot-bob { animation: dotBobAnim 2.8s ease-in-out infinite; }
+.instr-title {
+  font-family: 'Nunito', 'Quicksand', system-ui, sans-serif;
+  font-size: clamp(20px, 4vw, 28px);
+  color: #fff; font-weight: 700; margin-bottom: 20px;
+}
+.instr-body {
+  font-family: 'Nunito', 'Quicksand', system-ui, sans-serif;
+  font-size: clamp(14px, 2.4vw, 18px);
+  color: rgba(255,255,255,0.92);
+  text-align: center; max-width: 320px; line-height: 1.9; margin-bottom: 32px;
+}
+.instr-tap {
+  font-family: 'Nunito', 'Quicksand', system-ui, sans-serif;
+  font-size: clamp(13px, 2vw, 16px);
+  color: rgba(255,255,255,0.7); letter-spacing: 0.1em;
+  animation: breathe 1.6s ease-in-out infinite;
+}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<canvas id="hudCanvas"></canvas>
+
+<div id="startOverlay">
+  <!-- SVG Dot silhouette (Option B) -->
+  <svg class="svg-dot-bob" width="64" height="90" viewBox="0 0 64 90" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="dotGlow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <radialGradient id="bGrad" cx="38%" cy="30%" r="62%">
+        <stop offset="0%" stop-color="#FF5C6E"/>
+        <stop offset="100%" stop-color="#C41028"/>
+      </radialGradient>
+    </defs>
+    <!-- Heart balloon body -->
+    <path d="M32,48 C18,38 8,28 10,18 C12,8 22,6 28,12 C30,14 31,16 32,18
+             C33,16 34,14 36,12 C42,6 52,8 54,18 C56,28 46,38 32,48 Z"
+          fill="url(#bGrad)" filter="url(#dotGlow)"/>
+    <!-- Eyes -->
+    <circle cx="26" cy="25" r="2.2" fill="#1A0A0A"/>
+    <circle cx="36" cy="23" r="2.2" fill="#1A0A0A"/>
+    <!-- Highlight -->
+    <ellipse cx="21" cy="18" rx="7" ry="5" fill="rgba(255,255,255,0.65)" transform="rotate(-15,21,18)"/>
+    <!-- String -->
+    <path d="M32,48 Q35,57 34,65 Q33,72 34,82" stroke="#C8A87A" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  </svg>
+
+  <!-- Title SVG with glow -->
+  <svg width="340" height="90" viewBox="0 0 340 90" xmlns="http://www.w3.org/2000/svg" style="margin-top:10px; max-width:90vw;">
+    <defs>
+      <filter id="titleGlow" x="-20%" y="-60%" width="140%" height="220%">
+        <feGaussianBlur stdDeviation="4" result="blur"/>
+        <feFlood flood-color="#FFD580" flood-opacity="0.6" result="color"/>
+        <feComposite in="color" in2="blur" operator="in" result="glow"/>
+        <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <text x="170" y="62" font-family="'Nunito','Quicksand',system-ui,sans-serif"
+          font-size="56" font-weight="700" fill="#FFFFFF"
+          text-anchor="middle" filter="url(#titleGlow)">Balloon Drift</text>
+  </svg>
+
+  <div class="tap-fly">Tap to fly</div>
+</div>
+
+<div id="instructionsOverlay">
+  <div class="instr-title">How to Fly</div>
+  <div class="instr-body">
+    Dot rises on her own.<br>
+    Tap <strong>left</strong> or <strong>right</strong> to steer.<br><br>
+    Dodge power lines, pigeons &amp; chimneys.<br>
+    The higher she flies, the richer the world.<br><br>
+    <em style="color:rgba(255,255,255,0.7)">She just wanted to see what was up there.</em>
+  </div>
+  <div class="instr-tap">Tap anywhere to begin</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ── Canvas Setup ───────────────────────────────────────────────────────
+const gameCanvas = document.getElementById('gameCanvas');
+const hudCanvas  = document.getElementById('hudCanvas');
+const ctx = gameCanvas.getContext('2d');
+const hud = hudCanvas.getContext('2d');
+
+function resize() {
+  gameCanvas.width  = window.innerWidth;
+  gameCanvas.height = window.innerHeight;
+  hudCanvas.width   = window.innerWidth;
+  hudCanvas.height  = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function clamp(mn, v, mx) { return Math.max(mn, Math.min(mx, v)); }
+
+// ── Game State ─────────────────────────────────────────────────────────
+let gameState = 'start';
+let score = 0;
+let level = 1;
+let hasEverActed = false;
+
+// World scroll: worldY increases as Dot rises. All obstacles reference a spawnWorldY.
+// ScreenY for obstacle = spawnScreenY + (worldY - spawnWorldY)
+// → as worldY increases, obstacles move downward on screen. ✓
+let worldY = 0;
+
+let lastObstacleTime = 0;
+let lastScoreTime = 0;
+let pigeonWaveTimer = 0;
+let levelTransitioning = false;
+let levelTransitionStart = 0;
+
+let windActive = false;
+let windDir = 1;
+let windTimer = 0;
+let windNextTime = 0;
+let windWarning = false;
+let windWarningAge = 0;
+let level5StartTime = 0;
+
+let deathTimer = 0;
+let winZoom = 1;
+let prevTime = performance.now();
+
+// ── Player ─────────────────────────────────────────────────────────────
+const DOT_RADIUS = 22;
+let dot = {
+  x: 0, y: 0, vx: 0,
+  alive: true,
+  bobPhase: 0,
+  swayPhase: 0.7,
+  angle: 0,
+};
+
+// ── Entities ───────────────────────────────────────────────────────────
+let obstacles = [];     // powerline | chimney | pigeon
+let particles = [];     // pop fragments
+let nmParticles = [];   // near-miss sparks
+let clouds = [];
+let bgClouds = [];      // start screen clouds
+
+// ── Input ──────────────────────────────────────────────────────────────
+let holdLeft = false, holdRight = false;
+
+// ── Audio ──────────────────────────────────────────────────────────────
+let audioReady = false;
+let masterVol;
+let musicBox, pizz, pad, glocks, orch, bass;
+let layers = { musicBox:false, pizz:false, pad:false, glocks:false, orch:false, bass:false };
+let ssLoopId = null; // start-screen loop
+
+async function initAudio() {
+  if (audioReady) return;
+  audioReady = true;
+  await Tone.start();
+  Tone.Transport.bpm.value = 72;
+
+  masterVol = new Tone.Volume(-6).toDestination();
+
+  // Start screen music box (long reverb)
+  const ssRev = new Tone.Reverb({ decay:6.0, wet:0.75 });
+  await ssRev.ready;
+  const ssBox = new Tone.PluckSynth({ attackNoise:0.8, dampening:3400, resonance:0.88 });
+  const ssVol = new Tone.Volume(-10);
+  ssBox.chain(ssVol, ssRev, Tone.Destination);
+
+  // Kick off start-screen music
+  const ssNotes = ['G4','B4','D5','G5'];
+  let ni = 0;
+  function ssPlay() {
+    if (gameState !== 'start') return;
+    try { ssBox.triggerAttack(ssNotes[ni % ssNotes.length]); } catch(e){}
+    ni++;
+    ssLoopId = setTimeout(ssPlay, ni % 4 === 0 ? 3800 : 600);
+  }
+  ssLoopId = setTimeout(ssPlay, 400);
+
+  // Layer 1 – music box
+  const mbRev = new Tone.Reverb({ decay:2.5, wet:0.3 }); await mbRev.ready;
+  musicBox = new Tone.PluckSynth({ attackNoise:0.8, dampening:3400, resonance:0.88 });
+  musicBox.chain(mbRev, masterVol);
+
+  // Layer 2 – pizzicato strings
+  pizz = new Tone.PolySynth(Tone.Synth, {
+    oscillator:{ type:'triangle' },
+    envelope:{ attack:0.005, decay:0.35, sustain:0, release:0.1 },
+    volume:-14,
+  }); pizz.connect(masterVol);
+
+  // Layer 3 – warm pad
+  const padRev = new Tone.Reverb({ decay:3.5, wet:0.6 }); await padRev.ready;
+  pad = new Tone.AMSynth({
+    harmonicity:1.5, detune:-8,
+    oscillator:{ type:'sine' },
+    envelope:{ attack:0.8, decay:0.5, sustain:0.9, release:1.5 },
+    modulation:{ type:'sine' },
+    modulationEnvelope:{ attack:0.5, decay:0.3, sustain:0.7, release:1.0 },
+    volume:-18,
+  }); pad.chain(padRev, masterVol);
+
+  // Layer 4 – glockenspiel
+  const glRev = new Tone.Reverb({ decay:2.0, wet:0.5 }); await glRev.ready;
+  const glVol = new Tone.Volume(-12);
+  glocks = new Tone.PluckSynth({ dampening:4800, resonance:0.95 });
+  glocks.chain(glVol, glRev, masterVol);
+
+  // Layer 5 – orchestral swell
+  const orchRev = new Tone.Reverb({ decay:5, wet:0.65 }); await orchRev.ready;
+  orch = new Tone.FMSynth({
+    harmonicity:2, modulationIndex:3.5,
+    oscillator:{ type:'sine' },
+    envelope:{ attack:1.2, decay:0.5, sustain:0.8, release:2.0 },
+    modulation:{ type:'sine' },
+    modulationEnvelope:{ attack:0.8, decay:0.3, sustain:0.7, release:1.5 },
+    volume:-20,
+  }); orch.chain(orchRev, masterVol);
+
+  // Layer 6 – bass breath
+  bass = new Tone.Synth({
+    oscillator:{ type:'sine' },
+    envelope:{ attack:1.5, decay:0.5, sustain:0.9, release:2.0 },
+    volume:-22,
+  }); bass.connect(masterVol);
+}
+
+// ── Music Sequencing ────────────────────────────────────────────────────
+const BPM = 72;
+const SEC_PER_BEAT = 60 / BPM;
+const SEC_PER_BAR  = SEC_PER_BEAT * 4;
+
+// Melody: 8-bar phrase in G major, notes & beat offsets
+const MELODY = [
+  {n:'G4',b:0},{n:'B4',b:0.5},{n:'D5',b:1},{n:'G5',b:1.5},
+  {n:'E5',b:2},{n:'D5',b:2.5},{n:'B4',b:3},{n:'G4',b:3.5},
+  {n:'A4',b:4},{n:'C5',b:4.5},{n:'E5',b:5},{n:'D5',b:5.5},
+  {n:'B4',b:6},{n:'G4',b:6.5},{n:'D5',b:7},{n:'G5',b:7.5},
+];
+const PIZZ_SEQ = [
+  {ns:['G3','D4'],b:1},{ns:['B3','E4'],b:2},
+  {ns:['A3','E4'],b:3.5},{ns:['G3','D4'],b:5},
+  {ns:['F3','C4'],b:6},{ns:['G3','D4'],b:7},
+];
+const PAD_SEQ  = [{n:'G3',b:0},{n:'A3',b:4}];
+const GLOCK_SEQ = [
+  {n:'G5',b:0.25},{n:'B5',b:0.75},{n:'D6',b:1.25},{n:'G5',b:1.75},
+  {n:'E5',b:2.25},{n:'D5',b:2.75},{n:'B4',b:3.25},{n:'G5',b:3.75},
+];
+const ORCH_SEQ = [{n:'G4',b:0},{n:'B4',b:2},{n:'D5',b:4},{n:'G4',b:6}];
+const BASS_SEQ = [{n:'G2',b:0},{n:'G2',b:4}];
+
+const PHRASE_DUR = 8 * SEC_PER_BAR; // 8 bars
+
+function startGameMusic() {
+  if (ssLoopId) { clearTimeout(ssLoopId); ssLoopId = null; }
+  if (!audioReady) return;
+  Tone.Transport.stop();
+  Tone.Transport.cancel();
+  layers = { musicBox:true, pizz:false, pad:false, glocks:false, orch:false, bass:false };
+  // Schedule 64 phrases (plenty for a long game)
+  for (let i = 0; i < 64; i++) {
+    const off = i * PHRASE_DUR;
+    for (const m of MELODY) {
+      Tone.Transport.schedule(t => {
+        if (!layers.musicBox || !audioReady) return;
+        try { musicBox.triggerAttack(m.n, t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+    for (const m of PIZZ_SEQ) {
+      Tone.Transport.schedule(t => {
+        if (!layers.pizz || !audioReady) return;
+        try { pizz.triggerAttackRelease(m.ns, '8n', t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+    for (const m of PAD_SEQ) {
+      Tone.Transport.schedule(t => {
+        if (!layers.pad || !audioReady) return;
+        try { pad.triggerAttackRelease(m.n, '2n', t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+    for (const m of GLOCK_SEQ) {
+      Tone.Transport.schedule(t => {
+        if (!layers.glocks || !audioReady) return;
+        try { glocks.triggerAttack(m.n, t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+    for (const m of ORCH_SEQ) {
+      Tone.Transport.schedule(t => {
+        if (!layers.orch || !audioReady) return;
+        try { orch.triggerAttackRelease(m.n, '2n', t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+    for (const m of BASS_SEQ) {
+      Tone.Transport.schedule(t => {
+        if (!layers.bass || !audioReady) return;
+        try { bass.triggerAttackRelease(m.n, '2n', t); } catch(e){}
+      }, off + m.b * SEC_PER_BEAT);
+    }
+  }
+  Tone.Transport.start();
+}
+
+function updateMusicLayers() {
+  if (!audioReady) return;
+  if (score >= 150  && !layers.pizz)   layers.pizz  = true;
+  if (score >= 400  && !layers.pad)    { layers.pad  = true; layers.bass = true; }
+  if (score >= 700  && !layers.glocks) layers.glocks = true;
+  if (score >= 1100 && !layers.orch)   { layers.orch  = true; masterVol.volume.value = -4; }
+}
+
+function playDeathSound() {
+  if (!audioReady) return;
+  Tone.Transport.stop(); Tone.Transport.cancel();
+  layers = { musicBox:false, pizz:false, pad:false, glocks:false, orch:false, bass:false };
+  try {
+    const ns = new Tone.NoiseSynth({
+      noise:{ type:'white' }, envelope:{ attack:0.001, decay:0.12, sustain:0 },
+    }).toDestination();
+    ns.triggerAttackRelease('16n');
+  } catch(e){}
+  try {
+    const ps = new Tone.PluckSynth().toDestination();
+    ps.triggerAttack('C4');
+    setTimeout(() => { try { ps.disconnect(); } catch(e){} }, 600);
+  } catch(e){}
+}
+
+function playRespawnMusic() {
+  if (!audioReady) return;
+  setTimeout(() => {
+    masterVol.volume.value = -14;
+    startGameMusic();
+    let steps = 24, cv = -14, tv = -6, ss = (tv - cv)/steps, si = 0;
+    const iv = setInterval(() => {
+      si++; cv += ss;
+      if (audioReady && masterVol) masterVol.volume.value = Math.min(cv, tv);
+      if (si >= steps) clearInterval(iv);
+    }, (2 * SEC_PER_BAR * 1000) / steps);
+  }, 800);
+}
+
+function playLevelUpChime() {
+  if (!audioReady) return;
+  try {
+    const pv = new Tone.PolySynth(Tone.Synth, {
+      envelope:{ attack:0.01, decay:0.4, sustain:0 }, volume:-8,
+    }).toDestination();
+    pv.triggerAttackRelease(['G4','B4','D5'], '8n');
+    setTimeout(() => { try { pv.disconnect(); } catch(e){} }, 1000);
+  } catch(e){}
+}
+
+function playNearMissSound() {
+  if (!audioReady) return;
+  try {
+    const rev = new Tone.Reverb({ decay:1.5, wet:0.5 });
+    const ps  = new Tone.PluckSynth({ dampening:4800, resonance:0.97 });
+    ps.chain(rev, Tone.Destination);
+    setTimeout(() => {
+      try { ps.triggerAttack('G5'); } catch(e){}
+      setTimeout(() => { try { ps.disconnect(); rev.disconnect(); } catch(e){} }, 1000);
+    }, SEC_PER_BEAT * 1000);
+  } catch(e){}
+}
+
+function playTapSound(dir) {
+  if (!audioReady) return;
+  try {
+    const note = dir === 'left' ? 'A3' : 'C4';
+    const ps = new Tone.PluckSynth({ attackNoise:1.2 }).toDestination();
+    ps.triggerAttack(note);
+    setTimeout(() => { try { ps.disconnect(); } catch(e){} }, 400);
+  } catch(e){}
+}
+
+function playPigeonCoo() {
+  if (!audioReady) return;
+  try {
+    const fm = new Tone.FMSynth({
+      harmonicity:0.5, modulationIndex:2,
+      envelope:{ attack:0.05, decay:0.2, sustain:0.3, release:0.2 },
+      volume:-18,
+    }).toDestination();
+    fm.triggerAttackRelease('C3', '4n');
+    setTimeout(() => { try { fm.triggerAttackRelease('A#2','8n'); } catch(e){} }, 220);
+    setTimeout(() => { try { fm.disconnect(); } catch(e){} }, 1200);
+  } catch(e){}
+}
+
+function playWinSound() {
+  if (!audioReady) return;
+  try {
+    const rev = new Tone.Reverb({ decay:8, wet:0.8 });
+    const ps  = new Tone.PluckSynth({ dampening:4800, resonance:0.99 });
+    ps.chain(rev, Tone.Destination);
+    ['G5','B5','D6','G6'].forEach((n,i) => {
+      setTimeout(() => { try { ps.triggerAttack(n); } catch(e){} }, i * 400);
+    });
+    setTimeout(() => { try { ps.disconnect(); rev.disconnect(); } catch(e){} }, 5000);
+    masterVol.volume.rampTo(0, 1);
+  } catch(e){}
+}
+
+// ── Level Helpers ───────────────────────────────────────────────────────
+function getLevel() {
+  if (score < 150)  return 1;
+  if (score < 400)  return 2;
+  if (score < 700)  return 3;
+  if (score < 1100) return 4;
+  return 5;
+}
+function getRiseSpeed() { return [0,1.4,1.7,2.0,2.3,2.6][getLevel()]; }
+function getSpawnMs()   { return [0,3200,2600,2200,1800,1500][getLevel()]; }
+
+// ── Spawn ──────────────────────────────────────────────────────────────
+function spawnObstacle() {
+  const lv  = getLevel();
+  const w   = gameCanvas.width;
+  const h   = gameCanvas.height;
+  const rng = Math.random();
+  if (lv >= 4 && rng < 0.28) {
+    spawnChimneys();
+  } else {
+    spawnPowerLine();
+  }
+}
+
+function spawnPowerLine() {
+  const w   = gameCanvas.width;
+  const lv  = getLevel();
+  const minGap = [0,160,140,130,120,110][lv];
+  const gapW   = minGap + Math.random() * 50;
+  const gapX   = gapW/2 + Math.random() * (w - gapW);
+  const angleDeg = lv >= 2 ? (Math.random() - 0.5) * 40 : 0;
+
+  obstacles.push({
+    type: 'powerline',
+    // spawnScreenY: just above top of screen
+    spawnScreenY: -24,
+    spawnWorldY: worldY,
+    gapX, gapW,
+    angle: angleDeg * Math.PI / 180,
+    nearMissCredited: false,
+  });
+}
+
+function spawnChimneys() {
+  const w     = gameCanvas.width;
+  const count = 2 + Math.floor(Math.random() * 2); // 2–3
+  // Lay them out with 100–120px gaps between them
+  const chimneyW = 40;
+  const gapMin   = 100;
+  // Total width of chimneys + gaps
+  const totalW = count * chimneyW + (count + 1) * (gapMin + Math.random() * 20);
+  let startX = (w - totalW) / 2 + (Math.random() - 0.5) * 60;
+  startX = Math.max(0, Math.min(w - totalW, startX));
+
+  const chimneyH = 120 + Math.random() * 80;
+  let curX = startX;
+  for (let i = 0; i < count; i++) {
+    const gapW = gapMin + Math.random() * 20;
+    curX += gapW;
+    obstacles.push({
+      type: 'chimney',
+      spawnScreenY: -chimneyH,
+      spawnWorldY: worldY,
+      x: curX,
+      width: chimneyW,
+      height: chimneyH,
+      nearMissCredited: false,
+    });
+    curX += chimneyW;
+  }
+}
+
+function spawnPigeonWave() {
+  const w     = gameCanvas.width;
+  const h     = gameCanvas.height;
+  const count = 1 + Math.floor(Math.random() * 3);
+  const left  = Math.random() < 0.5;
+  for (let i = 0; i < count; i++) {
+    const sp  = 1.2 + Math.random() * 0.8;
+    const yOff = (Math.random() - 0.5) * 100;
+    obstacles.push({
+      type: 'pigeon',
+      x: left ? -40 : w + 40,
+      // Pigeons appear at dot height ± yOff, in screen coords
+      y: h * 0.55 + yOff,
+      vx: left ? sp : -sp,
+      nearMissCredited: false,
+    });
+  }
+  if (count > 0) playPigeonCoo();
+}
+
+// ── Clouds ─────────────────────────────────────────────────────────────
+function initClouds() {
+  clouds = [];
+  const w = gameCanvas.width;
+  const h = gameCanvas.height;
+  for (let i = 0; i < 6; i++) {
+    clouds.push({
+      x: Math.random() * w * 1.3,
+      y: Math.random() * h * 0.9,
+      cw: 70 + Math.random() * 80,
+      ch: 32 + Math.random() * 28,
+    });
+  }
+  // Start screen bg clouds
+  bgClouds = [];
+  for (let i = 0; i < 4; i++) {
+    bgClouds.push({
+      x: Math.random() * w,
+      y: h * 0.05 + Math.random() * h * 0.4,
+      cw: 60 + Math.random() * 70,
+      ch: 28 + Math.random() * 22,
+    });
+  }
+}
+
+// ── Game Init ──────────────────────────────────────────────────────────
+function initGame() {
+  const w = gameCanvas.width;
+  const h = gameCanvas.height;
+  dot.x = w / 2;
+  dot.y = h - 90;
+  dot.vx = 0;
+  dot.alive = true;
+  dot.bobPhase  = 0;
+  dot.swayPhase = 0.7;
+  dot.angle = 0;
+  obstacles = [];
+  particles = [];
+  nmParticles = [];
+  worldY = 0;
+  holdLeft = holdRight = false;
+  hasEverActed = false;
+  levelTransitioning = false;
+  lastObstacleTime = performance.now() + 1500;
+  lastScoreTime    = performance.now();
+  pigeonWaveTimer  = performance.now() + 7000;
+  windNextTime     = performance.now() + 10000;
+  windActive = windWarning = false;
+  level5StartTime  = 0;
+  winZoom = 1;
+}
+
+function respawnDot() {
+  const w = gameCanvas.width;
+  const h = gameCanvas.height;
+  dot.x = w / 2;
+  dot.y = h - 90;
+  dot.vx = 0;
+  dot.alive = true;
+  dot.angle = 0;
+  obstacles = [];
+  particles = [];
+  nmParticles = [];
+  holdLeft = holdRight = false;
+  lastObstacleTime = performance.now() + 1500;
+  levelTransitioning = false;
+  gameState = 'playing';
+  playRespawnMusic();
+}
+
+// ── Input ──────────────────────────────────────────────────────────────
+document.getElementById('startOverlay').addEventListener('pointerdown', e => {
+  if (gameState !== 'start') return;
+  e.preventDefault();
+  initAudio().catch(() => {});
+  showInstructions();
+}, { capture: true });
+
+document.getElementById('instructionsOverlay').addEventListener('pointerdown', e => {
+  if (gameState !== 'instructions') return;
+  e.preventDefault();
+  startGame();
+}, { capture: true });
+
+document.addEventListener('pointerdown', e => {
+  if (gameState !== 'playing') return;
+  hasEverActed = true;
+  const rect = gameCanvas.getBoundingClientRect();
+  const mid  = rect.left + rect.width / 2;
+  if (e.clientX < mid) {
+    holdLeft  = true;
+    holdRight = false;
+    playTapSound('left');
+  } else {
+    holdRight = true;
+    holdLeft  = false;
+    playTapSound('right');
+  }
+}, { capture: true });
+
+document.addEventListener('pointerup',     () => { holdLeft = holdRight = false; }, { capture: true });
+document.addEventListener('pointercancel', () => { holdLeft = holdRight = false; }, { capture: true });
+
+// ── Screen Flow ────────────────────────────────────────────────────────
+function showInstructions() {
+  gameState = 'instructions';
+  const so = document.getElementById('startOverlay');
+  const io = document.getElementById('instructionsOverlay');
+  so.style.transition = 'opacity 0.3s';
+  so.style.opacity    = '0';
+  setTimeout(() => { so.style.display = 'none'; }, 310);
+  io.classList.add('active');
+}
+
+function startGame() {
+  const io = document.getElementById('instructionsOverlay');
+  io.style.opacity = '0';
+  setTimeout(() => { io.style.display = 'none'; }, 310);
+  score = 0;
+  level = 1;
+  gameState = 'playing';
+  initGame();
+  startGameMusic();
+}
+
+// ── Draw helpers ───────────────────────────────────────────────────────
+function drawSky() {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  const lv = getLevel();
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0,   lv >= 5 ? '#4A7BA8' : '#5A8FB8');
+  g.addColorStop(0.55,'#87AECF');
+  g.addColorStop(1,   lv >= 5 ? '#87AECF' : '#B0CEDE');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+
+function drawCloud(x, y, cw, ch) {
+  ctx.save();
+  ctx.globalAlpha = 0.72;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.ellipse(x,          y,          cw*0.5, ch*0.4, 0, 0, Math.PI*2);
+  ctx.ellipse(x - cw*0.22, y + ch*0.12, cw*0.33, ch*0.33, 0, 0, Math.PI*2);
+  ctx.ellipse(x + cw*0.24, y + ch*0.10, cw*0.36, ch*0.32, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawClouds(riseSpeed) {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  for (const c of clouds) {
+    c.x += 0.2;
+    c.y += riseSpeed * 0.30; // parallax 0.30×
+    if (c.x > w + c.cw) c.x = -c.cw;
+    if (c.y > h + 60)   { c.y = -60; c.x = Math.random() * w; }
+    drawCloud(c.x, c.y, c.cw, c.ch);
+  }
+}
+
+function drawTelephonePole(x, baseY, alpha, scaleX) {
+  const sw = scaleX || 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  // Pole
+  ctx.strokeStyle = '#6B4F3A';
+  ctx.lineWidth   = 8 * sw;
+  ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, baseY - 180 * sw); ctx.stroke();
+  // Crossarm
+  ctx.lineWidth = 5 * sw;
+  ctx.beginPath();
+  ctx.moveTo(x - 32*sw, baseY - 160*sw);
+  ctx.lineTo(x + 32*sw, baseY - 160*sw);
+  ctx.stroke();
+  // Wire
+  ctx.strokeStyle = '#3A3530';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 32*sw, baseY - 158*sw);
+  ctx.quadraticCurveTo(x, baseY - 150*sw, x + 32*sw, baseY - 158*sw);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawBgLayer() {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  const riseSpeed = getRiseSpeed();
+
+  // Far bg: rooftops (parallax 0.15×) — tile vertically
+  const farOff = (worldY * 0.15) % (h * 0.6);
+  ctx.save();
+  // Draw rooftop band at bottom, scrolling slowly
+  const roofY = h * 0.75 + farOff;
+  ctx.fillStyle = '#6E6B66';
+  ctx.fillRect(0, roofY, w * 0.32, h * 0.25);
+  ctx.fillStyle = '#D4956A';
+  ctx.fillRect(w * 0.28, roofY + h*0.04, w * 0.22, h * 0.21);
+  ctx.fillStyle = '#6E6B66';
+  ctx.fillRect(w * 0.50, roofY - h*0.03, w * 0.20, h * 0.28);
+  ctx.fillStyle = '#4A3828';
+  ctx.fillRect(w * 0.70, roofY + h*0.02, w * 0.32, h * 0.23);
+  // Roof peaks
+  ctx.fillStyle = '#5C5550';
+  ctx.beginPath(); ctx.moveTo(0, roofY); ctx.lineTo(w*0.16, roofY - h*0.06); ctx.lineTo(w*0.32, roofY); ctx.fill();
+  ctx.restore();
+
+  // Mid bg: telephone poles (parallax 0.45×)
+  const midOff = worldY * 0.45;
+  const POLE_SPACING = h * 0.9;
+  for (let i = -1; i <= 3; i++) {
+    const py = h * 0.9 - (midOff % POLE_SPACING) + i * POLE_SPACING;
+    if (py > -200 && py < h + 200) {
+      drawTelephonePole(w * 0.12, py, 0.45, 0.65);
+      drawTelephonePole(w * 0.88, py, 0.45, 0.65);
+    }
+  }
+}
+
+function drawObstacle(obs) {
+  // Compute current screen Y from world scroll
+  const sy = obs.spawnScreenY + (worldY - obs.spawnWorldY);
+  obs._sy  = sy; // cache for collision
+
+  if (obs.type === 'powerline') drawPowerLineAt(obs, sy);
+  if (obs.type === 'chimney')   drawChimneyAt(obs, sy);
+  if (obs.type === 'pigeon')    drawPigeonAt(obs.x, obs.y);
+}
+
+function drawPowerLineAt(obs, sy) {
+  const w = gameCanvas.width;
+  ctx.save();
+  ctx.translate(0, sy);
+  ctx.rotate(obs.angle);
+
+  const gL = obs.gapX - obs.gapW / 2;
+  const gR = obs.gapX + obs.gapW / 2;
+
+  ctx.strokeStyle = '#3A3530';
+  ctx.lineWidth   = 1.5;
+
+  // Left segment
+  if (gL > 4) {
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.5, 0);
+    ctx.quadraticCurveTo(-w * 0.25 + gL * 0.5, 10, gL, 0);
+    ctx.stroke();
+  }
+  // Right segment
+  if (gR < w - 4) {
+    ctx.beginPath();
+    ctx.moveTo(gR, 0);
+    ctx.quadraticCurveTo((gR + w*1.5) * 0.5, 10, w * 1.5, 0);
+    ctx.stroke();
+  }
+
+  // Pole decorations (visual only, not hitbox)
+  ctx.fillStyle = '#6B4F3A';
+  ctx.fillRect(-12, -24, 12, 48);
+  ctx.fillRect(w,   -24, 12, 48);
+
+  ctx.restore();
+}
+
+function drawChimneyAt(obs, sy) {
+  ctx.save();
+  // Chimney is drawn downward from sy: top of chimney at sy, body extends down
+  ctx.fillStyle = '#5A4030';
+  ctx.fillRect(obs.x, sy, obs.width, obs.height);
+  // Dark cap at top
+  ctx.fillStyle = '#3A2820';
+  ctx.fillRect(obs.x - 4, sy, obs.width + 8, 9);
+  // Brick detail lines
+  ctx.strokeStyle = '#4A3425';
+  ctx.lineWidth = 1;
+  const bH = 12;
+  for (let r = 1; r * bH < obs.height; r++) {
+    ctx.beginPath();
+    ctx.moveTo(obs.x, sy + r*bH);
+    ctx.lineTo(obs.x + obs.width, sy + r*bH);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPigeonAt(px, py) {
+  ctx.save();
+  ctx.translate(px, py);
+  // Body
+  ctx.fillStyle = '#8B8982';
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 11, 0, 0, Math.PI*2); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.ellipse(13, -5, 8, 7, 0, 0, Math.PI*2); ctx.fill();
+  // Wing
+  ctx.fillStyle = '#78766F';
+  ctx.beginPath(); ctx.ellipse(-1, -1, 11, 6, -0.25, 0, Math.PI*2); ctx.fill();
+  // Feet
+  ctx.strokeStyle = '#C44444'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-3,10); ctx.lineTo(-3,16);
+  ctx.moveTo(-7,16); ctx.lineTo(-3,16); ctx.lineTo(0,16);
+  ctx.moveTo(4,10);  ctx.lineTo(4,16);
+  ctx.moveTo(0,16);  ctx.lineTo(4,16);  ctx.lineTo(7,16);
+  ctx.stroke();
+  // Eye
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(15,-6,2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDot() {
+  const x   = dot.x;
+  const y   = dot.y;
+  const bob = Math.sin(dot.bobPhase)  * 4;
+  const sw  = Math.sin(dot.swayPhase) * 6;
+  const a   = dot.angle;
+
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.rotate(a);
+
+  // String (quadratic bezier, control point offset by vx*6 + sway)
+  const cpX = dot.vx * 6 + sw * 0.5;
+  ctx.strokeStyle = '#C8A87A';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 20);
+  ctx.quadraticCurveTo(cpX, 40, sw * 0.4, 62);
+  ctx.stroke();
+
+  // Heart balloon (oriented with tip down, dome up)
+  // Rotate heart: standard heart has top at top, tip at bottom
+  // We want tip at bottom and dome at top → standard orientation
+  ctx.save();
+  ctx.rotate(Math.PI); // flip so dome is on top
+  const r = 22;
+  ctx.fillStyle = '#E8223A';
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.35);
+  ctx.bezierCurveTo(0, -r*0.9, -r*1.1, -r*0.9, -r*0.9, -r*0.35);
+  ctx.bezierCurveTo(-r*1.2, 0.2*r, 0, 0.85*r, 0, r);
+  ctx.bezierCurveTo(0, 0.85*r, r*1.2, 0.2*r, r*0.9, -r*0.35);
+  ctx.bezierCurveTo(r*1.1, -r*0.9, 0, -r*0.9, 0, -r*0.35);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eyes (in heart space, before flip confusion: after rotate(PI), screen up = heart down)
+  // Eyes appear on the front of the balloon, near top (visually)
+  ctx.fillStyle = '#1A0A0A';
+  ctx.beginPath(); ctx.arc(-7,  r*0.2, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( 7,  r*0.2, 2.5, 0, Math.PI*2); ctx.fill();
+
+  // Highlight
+  ctx.globalAlpha = 0.65;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath(); ctx.ellipse(-8, r*0.55, 7, 5, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore(); // undo flip
+
+  ctx.restore(); // undo translate+rotate
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.fillStyle = p.color;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.ang);
+    ctx.fillRect(-p.sz/2, -p.sz/2, p.sz, p.sz);
+    ctx.restore();
+  }
+  for (const p of nmParticles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.fillStyle = '#FFE566';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawVignette() {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  const cx = w/2, cy = h/2;
+  const rad = Math.max(w,h) * 0.78;
+  const g = ctx.createRadialGradient(cx,cy,rad*0.58,cx,cy,rad);
+  g.addColorStop(0, 'rgba(0,20,40,0)');
+  g.addColorStop(1, 'rgba(0,20,40,0.28)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+}
+
+function drawHUD() {
+  const w = hudCanvas.width, h = hudCanvas.height;
+  hud.clearRect(0,0,w,h);
+  if (gameState === 'start' || gameState === 'instructions') return;
+
+  // Score
+  hud.save();
+  hud.font = `700 ${clamp(16,w*0.04,22)}px 'Nunito','Quicksand',system-ui`;
+  hud.fillStyle = 'rgba(255,255,255,0.7)';
+  hud.textAlign = 'right';
+  hud.fillText(Math.floor(score).toString(), w - 18, 36);
+  hud.restore();
+
+  // Level indicator (small)
+  hud.save();
+  hud.font = `400 ${clamp(11,w*0.025,14)}px 'Nunito','Quicksand',system-ui`;
+  hud.fillStyle = 'rgba(255,255,255,0.45)';
+  hud.textAlign = 'right';
+  const lvNames = ['','Morning Calm','Telephone Exchange','Pigeon Parade','Chimney Row','Above the Clouds'];
+  hud.fillText(lvNames[getLevel()], w - 18, 54);
+  hud.restore();
+
+  // Wind warning arrow
+  if (windWarning) {
+    const fade = Math.min(1, windWarningAge / 600);
+    hud.save();
+    hud.globalAlpha = fade;
+    hud.font = `bold ${clamp(16,w*0.05,28)}px sans-serif`;
+    hud.fillStyle = '#FFE566';
+    hud.textAlign = 'center';
+    hud.fillText(windDir > 0 ? '→' : '←', w/2, 42);
+    hud.restore();
+  }
+
+  // Death message
+  if (gameState === 'dead') {
+    const el = performance.now() - deathTimer;
+    if (el > 800) {
+      const a = Math.min(1, (el - 800) / 500);
+      hud.save();
+      hud.globalAlpha = a * 0.85;
+      hud.font = `300 ${clamp(16,w*0.04,22)}px 'Nunito','Quicksand',system-ui`;
+      hud.fillStyle = '#AECDE8';
+      hud.textAlign = 'center';
+      hud.fillText('Gone...', w/2, h/2);
+      hud.restore();
+    }
+  }
+
+  // Win message
+  if (gameState === 'win') {
+    hud.save();
+    hud.globalAlpha = 0.95;
+    hud.font = `700 ${clamp(22,w*0.055,38)}px 'Nunito','Quicksand',system-ui`;
+    hud.fillStyle = '#FFFFFF';
+    hud.textAlign = 'center';
+    hud.fillText('She made it.', w/2, h/2 - 24);
+    hud.font = `300 ${clamp(13,w*0.03,18)}px 'Nunito','Quicksand',system-ui`;
+    hud.fillStyle = 'rgba(255,255,255,0.6)';
+    hud.fillText(`Score: ${Math.floor(score)}`, w/2, h/2 + 16);
+    hud.restore();
+  }
+}
+
+// ── Collision ───────────────────────────────────────────────────────────
+function checkCollisions() {
+  if (!dot.alive) return;
+  const w = gameCanvas.width;
+
+  for (const obs of obstacles) {
+    if (obs.type === 'powerline') {
+      const sy  = obs._sy;
+      const dy  = dot.y - sy;
+      // Only check if dot is near the wire height
+      if (Math.abs(dy) < DOT_RADIUS + 3) {
+        // Compensate for wire angle: where is dot X relative to wire?
+        const dotXAdj = dot.x - Math.tan(obs.angle) * dy;
+        const gL = obs.gapX - obs.gapW / 2;
+        const gR = obs.gapX + obs.gapW / 2;
+        // Dot's circular edge
+        const dotL = dotXAdj - DOT_RADIUS;
+        const dotR = dotXAdj + DOT_RADIUS;
+
+        if (dotL < gL || dotR > gR) {
+          killDot(); return;
+        }
+        // Near-miss
+        if (!obs.nearMissCredited) {
+          const distL = dotXAdj - gL;
+          const distR = gR - dotXAdj;
+          const nearest = Math.min(distL, distR) - DOT_RADIUS;
+          if (nearest < 20) {
+            obs.nearMissCredited = true;
+            score += 15;
+            spawnNMSparks(dot.x, dot.y);
+            playNearMissSound();
+          }
+        }
+      }
+    } else if (obs.type === 'chimney') {
+      const sy = obs._sy;
+      // Rectangle collision: dot circle vs chimney rect [obs.x, sy, obs.width, obs.height]
+      const nearX = clamp(obs.x, dot.x, obs.x + obs.width);
+      const nearY = clamp(sy,    dot.y, sy + obs.height);
+      const dx = dot.x - nearX;
+      const dy = dot.y - nearY;
+      if (dx*dx + dy*dy < DOT_RADIUS * DOT_RADIUS) {
+        killDot(); return;
+      }
+      // Near-miss
+      if (!obs.nearMissCredited) {
+        const dist = Math.sqrt(dx*dx + dy*dy) - DOT_RADIUS;
+        if (dist < 20) {
+          obs.nearMissCredited = true;
+          score += 15;
+          spawnNMSparks(dot.x, dot.y);
+          playNearMissSound();
+        }
+      }
+    } else if (obs.type === 'pigeon') {
+      const dx = dot.x - obs.x;
+      const dy = dot.y - obs.y;
+      const d2 = dx*dx + dy*dy;
+      const hitR = DOT_RADIUS + 12;
+      if (d2 < hitR * hitR) { killDot(); return; }
+      if (!obs.nearMissCredited && d2 < (hitR + 20) * (hitR + 20)) {
+        obs.nearMissCredited = true;
+        score += 15;
+        spawnNMSparks(dot.x, dot.y);
+        playNearMissSound();
+      }
+    }
+  }
+
+  // Wall bounce
+  if (dot.x < DOT_RADIUS) {
+    dot.x  = DOT_RADIUS;
+    dot.vx = Math.abs(dot.vx) * 0.35;
+  }
+  if (dot.x > w - DOT_RADIUS) {
+    dot.x  = w - DOT_RADIUS;
+    dot.vx = -Math.abs(dot.vx) * 0.35;
+  }
+}
+
+function killDot() {
+  if (!dot.alive) return;
+  dot.alive   = false;
+  gameState   = 'dead';
+  deathTimer  = performance.now();
+  holdLeft    = holdRight = false;
+  spawnPopParticles(dot.x, dot.y);
+  playDeathSound();
+  setTimeout(respawnDot, 2000);
+}
+
+function spawnPopParticles(x, y) {
+  for (let i = 0; i < 12; i++) {
+    const ang = (Math.PI * 2 * i / 12) + (Math.random() - 0.5) * 0.4;
+    const spd = 1.5 + Math.random() * 2.5;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      alpha: 1.0, sz: 4 + Math.random() * 7,
+      ang: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 0.18,
+      color: Math.random() < 0.6 ? '#E8223A' : '#FF6B6B',
+      maxLife: 600, life: 0,
+    });
+  }
+}
+
+function spawnNMSparks(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 0.8 + Math.random() * 1.5;
+    nmParticles.push({
+      x: x + (Math.random()-0.5)*16, y: y + (Math.random()-0.5)*16,
+      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+      alpha: 1, sz: 2.5 + Math.random()*2.5,
+      maxLife: 120, life: 0,
+    });
+  }
+}
+
+// ── Update ──────────────────────────────────────────────────────────────
+function update(dt, now) {
+  if (gameState !== 'playing') return;
+  const w = gameCanvas.width, h = gameCanvas.height;
+  const riseSpeed = getRiseSpeed();
+  const lv = getLevel();
+
+  // Score (1 per second)
+  if (now - lastScoreTime >= 1000) {
+    score += 1;
+    lastScoreTime = now;
+    updateMusicLayers();
+  }
+
+  // Level transition
+  const newLv = getLevel();
+  if (newLv !== level) {
+    level = newLv;
+    if (level === 5) {
+      level5StartTime = now;
+      windNextTime    = now + (8 + Math.random() * 4) * 1000;
+    }
+    playLevelUpChime();
+    levelTransitioning  = true;
+    levelTransitionStart = now;
+  }
+  if (levelTransitioning && now - levelTransitionStart > 5000) {
+    levelTransitioning = false;
+  }
+
+  // Player horizontal input
+  if (holdLeft)  dot.vx -= 2.8;
+  if (holdRight) dot.vx += 2.8;
+  dot.vx = clamp(-5.5, dot.vx, 5.5);
+  if (!holdLeft && !holdRight) dot.vx *= 0.92;
+
+  // Wind (Level 5)
+  if (lv >= 5 && level5StartTime > 0 && now - level5StartTime > 500) {
+    if (!windActive && !windWarning && now >= windNextTime - 1000) {
+      windWarning    = true;
+      windWarningAge = 0;
+      windDir        = Math.random() < 0.5 ? 1 : -1;
+    }
+    if (windWarning) {
+      windWarningAge += dt * 1000;
+      if (windWarningAge >= 1000) {
+        windWarning = false;
+        windActive  = true;
+        windTimer   = 0;
+      }
+    }
+    if (windActive) {
+      windTimer += dt * 1000;
+      dot.vx += windDir * 1.8;
+      if (windTimer >= 1500) {
+        windActive   = false;
+        windNextTime = now + (8 + Math.random() * 4) * 1000;
+      }
+    }
+  }
+
+  // Physics
+  dot.x += dot.vx;
+
+  // World scrolls: worldY increases by riseSpeed each frame
+  worldY += riseSpeed;
+
+  // Soft-follow dot toward 65% of screen height
+  const targetDotY = h * 0.65;
+  dot.y += (targetDotY - dot.y) * 0.08;
+
+  // Bob & sway
+  dot.bobPhase  += dt * (Math.PI * 2 / 2.8);
+  dot.swayPhase += dt * (Math.PI * 2 / 2.1);
+  dot.angle = Math.sin(dot.swayPhase) * (2 * Math.PI / 180);
+
+  // Collision
+  checkCollisions();
+
+  // Obstacle spawning
+  if (!levelTransitioning && now - lastObstacleTime > getSpawnMs()) {
+    lastObstacleTime = now;
+    spawnObstacle();
+  }
+
+  // Pigeon waves (Level 3+)
+  if (lv >= 3 && now > pigeonWaveTimer) {
+    pigeonWaveTimer = now + 6000 + Math.random() * 3000;
+    spawnPigeonWave();
+  }
+
+  // Update obstacle screenY and positions
+  for (const obs of obstacles) {
+    if (obs.type === 'pigeon') {
+      obs.x += obs.vx;
+    }
+    // _sy is set in drawObstacle() — we need it for collision too
+    // Pre-compute here for collision accuracy:
+    if (obs.type !== 'pigeon') {
+      obs._sy = obs.spawnScreenY + (worldY - obs.spawnWorldY);
+    }
+  }
+
+  // Remove off-screen obstacles
+  const h2 = h;
+  obstacles = obstacles.filter(obs => {
+    if (obs.type === 'pigeon') return obs.x > -80 && obs.x < gameCanvas.width + 80;
+    const sy = obs._sy !== undefined ? obs._sy : 0;
+    return sy < h2 + 100 && sy > -500;
+  });
+
+  // Particles
+  const dtMs = dt * 1000;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.06;
+    p.ang += p.spin;
+    p.life += dtMs;
+    p.alpha = 1 - p.life / p.maxLife;
+  }
+  particles = particles.filter(p => p.alpha > 0.01);
+
+  for (const p of nmParticles) {
+    p.x += p.vx; p.y += p.vy;
+    p.life += dtMs;
+    p.alpha = 1 - p.life / p.maxLife;
+  }
+  nmParticles = nmParticles.filter(p => p.alpha > 0.01);
+
+  // Win check
+  if (score >= 1500 && hasEverActed && gameState === 'playing') {
+    gameState = 'win';
+    playWinSound();
+  }
+}
+
+// ── Render ──────────────────────────────────────────────────────────────
+function render() {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  ctx.clearRect(0,0,w,h);
+
+  if (gameState === 'win') {
+    // Slight zoom-out on win
+    winZoom = clamp(0.85, winZoom - 0.0003, 1.0);
+    ctx.save();
+    ctx.translate(w/2, h/2);
+    ctx.scale(winZoom, winZoom);
+    ctx.translate(-w/2, -h/2);
+  }
+
+  drawSky();
+  drawBgLayer();
+  drawClouds(getRiseSpeed());
+
+  // Draw obstacles (sets _sy for collision)
+  for (const obs of obstacles) drawObstacle(obs);
+
+  // Draw Dot
+  if (dot.alive) drawDot();
+
+  drawParticles();
+  drawVignette();
+
+  if (gameState === 'win') ctx.restore();
+
+  drawHUD();
+}
+
+// ── Start Screen Render ─────────────────────────────────────────────────
+function renderStartScreen(now) {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  ctx.clearRect(0,0,w,h);
+  hud.clearRect(0,0,w,h);
+
+  // Sky
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#5A8FB8'); g.addColorStop(0.55,'#87AECF'); g.addColorStop(1,'#B0CEDE');
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+  // BG clouds drift
+  for (const c of bgClouds) {
+    c.x += 0.2;
+    if (c.x > w + c.cw) c.x = -c.cw;
+    drawCloud(c.x, c.y, c.cw, c.ch);
+  }
+
+  // Rooftops
+  ctx.fillStyle = '#6E6B66'; ctx.fillRect(0, h*0.76, w*0.30, h*0.24);
+  ctx.fillStyle = '#D4956A'; ctx.fillRect(w*0.26, h*0.80, w*0.20, h*0.20);
+  ctx.fillStyle = '#6E6B66'; ctx.fillRect(w*0.46, h*0.73, w*0.18, h*0.27);
+  ctx.fillStyle = '#4A3828'; ctx.fillRect(w*0.62, h*0.78, w*0.38, h*0.22);
+  // Roof triangle
+  ctx.fillStyle = '#5C5550';
+  ctx.beginPath(); ctx.moveTo(0,h*0.76); ctx.lineTo(w*0.15,h*0.70); ctx.lineTo(w*0.30,h*0.76); ctx.fill();
+
+  // Poles
+  drawTelephonePole(w*0.17, h*0.93, 0.9, 0.7);
+  drawTelephonePole(w*0.83, h*0.93, 0.9, 0.7);
+
+  // Wire between poles
+  ctx.strokeStyle = '#3A3530'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(w*0.17, h*0.93 - 158*0.7);
+  ctx.quadraticCurveTo(w*0.5, h*0.93 - 138*0.7, w*0.83, h*0.93 - 158*0.7);
+  ctx.stroke();
+
+  // Static pigeon on right wire
+  const px = w * 0.68;
+  const py = h * 0.93 - 155*0.7;
+  ctx.save(); ctx.translate(px, py);
+  ctx.fillStyle = '#8B8982';
+  ctx.beginPath(); ctx.ellipse(0,0,10,7,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(8,-3,5,4,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#C44444'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-2,6); ctx.lineTo(-2,10); ctx.moveTo(2,6); ctx.lineTo(2,10); ctx.stroke();
+  ctx.restore();
+
+  // Dot idling in center-upper area with bob+sway
+  const bobPh  = now * (Math.PI*2/2.8);
+  const swayPh = now * (Math.PI*2/2.1) + 0.7;
+  const bobOff = Math.sin(bobPh)  * 8;
+  const swOff  = Math.sin(swayPh) * 6;
+  const ang    = Math.sin(swayPh) * (2*Math.PI/180);
+
+  // Temporarily set dot state for drawing
+  const savedX = dot.x, savedY = dot.y, savedVx = dot.vx, savedAng = dot.angle;
+  const savedBob = dot.bobPhase, savedSw = dot.swayPhase;
+  dot.x = w*0.5; dot.y = h*0.32; dot.vx = 0; dot.angle = ang;
+  dot.bobPhase = bobPh; dot.swayPhase = swayPh;
+  drawDot();
+  dot.x = savedX; dot.y = savedY; dot.vx = savedVx; dot.angle = savedAng;
+  dot.bobPhase = savedBob; dot.swayPhase = savedSw;
+
+  drawVignette();
+}
+
+// ── Main Loop ────────────────────────────────────────────────────────────
+function loop(nowMs) {
+  requestAnimationFrame(loop);
+  const now = nowMs;
+  const dt  = clamp(0, (now - prevTime) / 1000, 0.05);
+  prevTime  = now;
+  const nowSec = now / 1000;
+
+  if (gameState === 'start' || gameState === 'instructions') {
+    renderStartScreen(nowSec);
+  } else {
+    update(dt, now);
+    render();
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────
+initClouds();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
